@@ -1,0 +1,1677 @@
+================================================================================
+  FAIRDEAL RIDER ASSET MANAGEMENT & SETTLEMENT SYSTEM
+  API ENDPOINT TEST CASES — PROFESSIONAL DOCUMENTATION
+================================================================================
+
+  Project   : Fairdeal Rider Asset Management & Settlement System
+  Test File : rider-asset-management/tests/test_api_endpoints.py
+  Framework : pytest 8.3.2  |  httpx 0.27.2  |  pytest-asyncio 0.23.8
+  Database  : Mocked (AsyncIOMotorDatabase via unittest.mock)
+  Date      : 2026-03-22
+  Total     : 77 Test Cases
+
+================================================================================
+  HOW TO RUN
+================================================================================
+
+  cd rider-asset-management
+  pytest tests/test_api_endpoints.py -v
+
+  Run a single group:
+    pytest tests/test_api_endpoints.py::TestAssetCreate -v
+
+  Run with coverage:
+    pytest tests/test_api_endpoints.py --cov=. --cov-report=term-missing
+
+================================================================================
+  TABLE OF CONTENTS
+================================================================================
+
+  Section 1  ── Root Endpoints          (TC-ROOT-001 to TC-ROOT-002)      2 cases
+  Section 2  ── Asset Master            (TC-ASSET-001 to TC-ASSET-021)   21 cases
+  Section 3  ── Issuances               (TC-ISS-001 to TC-ISS-029)       29 cases
+  Section 4  ── Settlement              (TC-SETT-001 to TC-SETT-007)      7 cases
+  Section 5  ── Reports                 (TC-REP-001 to TC-REP-006)        6 cases
+  Section 6  ── Vendors                 (TC-VEN-001 to TC-VEN-009)        9 cases
+  Section 7  ── Admin Override          (TC-ADM-001 to TC-ADM-023)       23 cases
+  Section 8  ── Rider View              (TC-RIDER-001 to TC-RIDER-006)    6 cases  -- though the below are from the existing test_settlement_engine.py
+  Section 9  ── Settlement Engine Unit  (existing tests, summary)         12 cases
+  Section 10 ── Issuance Validation Unit(existing tests, summary)         16 cases
+
+================================================================================
+  LEGEND
+================================================================================
+
+  Status  PASS  = Test passes when run against a correctly implemented system
+          FAIL  = Test intentionally expects an error / boundary condition
+  Type    HP    = Happy Path (normal successful flow)
+          VE    = Validation Error (input rejection)
+          BR    = Business Rule enforcement
+          EC    = Edge Case
+          BND   = Boundary Value
+
+================================================================================
+  SECTION 1 — ROOT ENDPOINTS
+================================================================================
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ROOT-001
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : GET /health
+  Class      : TestRoot.test_root_001_health_check_returns_ok
+  Type       : HP
+  Description: Verifies the health-check endpoint returns a 200 response with
+               service=ok and service name.
+
+  Input      : GET /health  (no body, no auth)
+
+  Expected   : HTTP 200
+               {
+                 "status": "ok",
+                 "service": "rider-asset-management"
+               }
+
+  Assertions : status_code == 200
+               body["status"] == "ok"
+               body["service"] == "rider-asset-management"
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ROOT-002
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : GET /
+  Class      : TestRoot.test_root_002_root_returns_service_info
+  Type       : HP
+  Description: Verifies the root endpoint returns service metadata including
+               the version, docs path, and redoc path.
+
+  Input      : GET /
+
+  Expected   : HTTP 200
+               {
+                 "service": "Fairdeal Rider Asset ...",
+                 "version": "1.0.0",
+                 "docs": "/docs",
+                 "redoc": "/redoc"
+               }
+
+  Assertions : status_code == 200
+               "service" in body
+               "version" in body
+               body["docs"] == "/docs"
+
+================================================================================
+  SECTION 2 — ASSET MASTER  (/api/assets)
+================================================================================
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ASSET-001
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : POST /api/assets
+  Class      : TestAssetCreate.test_asset_001_create_self_absorption
+  Type       : HP
+  Description: Creates an asset with SELF absorption type. No vendorId is
+               required for SELF. Verifies the created document is returned.
+
+  Input Body :
+    {
+      "name": "Delivery Bag",
+      "costPrice": 1000.0,
+      "absorptionType": "SELF",
+      "stock": 50
+    }
+
+  Mock Setup : asset_master.insert_one → returns inserted_id
+               asset_master.find_one   → returns asset doc
+
+  Expected   : HTTP 201
+               Response contains "name", "status": "active"
+
+  Assertions : status_code == 201
+               body["name"] == "Test Asset"
+               body["status"] == "active"
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ASSET-002
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : POST /api/assets
+  Class      : TestAssetCreate.test_asset_002_create_vendor_absorption
+  Type       : HP
+  Description: Creates an asset with VENDOR absorption and a valid vendorId.
+
+  Input Body :
+    {
+      "name": "Helmet",
+      "costPrice": 500.0,
+      "absorptionType": "VENDOR",
+      "vendorId": "<valid-ObjectId>",
+      "stock": 20
+    }
+
+  Expected   : HTTP 201
+
+  Assertions : status_code == 201
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ASSET-003
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : POST /api/assets
+  Class      : TestAssetCreate.test_asset_003_vendor_absorption_missing_vendor_id
+  Type       : VE
+  Description: VENDOR absorption requires vendorId. Sending without it triggers
+               a Pydantic model_validator error.
+
+  Input Body :
+    {
+      "name": "Jacket",
+      "costPrice": 300.0,
+      "absorptionType": "VENDOR",
+      "stock": 10
+    }
+    (vendorId field is missing)
+
+  Expected   : HTTP 422 Unprocessable Entity
+               error detail references "vendorId is required when absorptionType is VENDOR"
+
+  Assertions : status_code == 422
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ASSET-004
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : POST /api/assets
+  Class      : TestAssetCreate.test_asset_004_negative_cost_price
+  Type       : VE
+  Description: costPrice must be greater than 0 (Field gt=0). Negative value
+               is rejected at Pydantic layer.
+
+  Input Body :
+    { "name": "Bad Asset", "costPrice": -100.0, "absorptionType": "SELF", "stock": 5 }
+
+  Expected   : HTTP 422
+
+  Assertions : status_code == 422
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ASSET-005
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : POST /api/assets
+  Class      : TestAssetCreate.test_asset_005_zero_cost_price
+  Type       : BND
+  Description: costPrice=0 violates gt=0 constraint. Zero is boundary invalid.
+
+  Input Body :
+    { "name": "Zero Asset", "costPrice": 0.0, "absorptionType": "SELF", "stock": 5 }
+
+  Expected   : HTTP 422
+
+  Assertions : status_code == 422
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ASSET-006
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : POST /api/assets
+  Class      : TestAssetCreate.test_asset_006_invalid_absorption_type
+  Type       : VE
+  Description: absorptionType must match pattern ^(VENDOR|SELF)$. Any other
+               value is rejected.
+
+  Input Body :
+    { "name": "Asset", "costPrice": 500.0, "absorptionType": "SHARED", "stock": 10 }
+
+  Expected   : HTTP 422
+
+  Assertions : status_code == 422
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ASSET-007
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : POST /api/assets
+  Class      : TestAssetCreate.test_asset_007_zero_stock_is_valid
+  Type       : EC
+  Description: stock=0 is a valid state (asset exists but is out of stock).
+               The record should be created; issuance will be blocked separately.
+
+  Input Body :
+    { "name": "Out of Stock Asset", "costPrice": 800.0, "absorptionType": "SELF", "stock": 0 }
+
+  Expected   : HTTP 201
+
+  Assertions : status_code == 201
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ASSET-008
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : POST /api/assets
+  Class      : TestAssetCreate.test_asset_008_empty_name
+  Type       : VE
+  Description: name="" violates min_length=1 constraint.
+
+  Input Body :
+    { "name": "", "costPrice": 500.0, "absorptionType": "SELF", "stock": 10 }
+
+  Expected   : HTTP 422
+
+  Assertions : status_code == 422
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ASSET-009
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : GET /api/assets
+  Class      : TestAssetList.test_asset_009_list_all_assets
+  Type       : HP
+  Description: Returns all assets when no status filter is applied.
+
+  Input      : GET /api/assets  (no query params)
+  Mock Setup : asset_master.find → cursor of 3 docs
+
+  Expected   : HTTP 200, list of 3 items
+
+  Assertions : status_code == 200
+               len(body) == 3
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ASSET-010
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : GET /api/assets?status=active
+  Class      : TestAssetList.test_asset_010_list_filter_active
+  Type       : HP
+  Description: Filters returned assets by status=active.
+
+  Input      : GET /api/assets?status=active
+  Mock Setup : find → cursor of 1 active doc
+
+  Expected   : HTTP 200, list of 1 item
+
+  Assertions : status_code == 200
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ASSET-011
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : GET /api/assets?status=inactive
+  Class      : TestAssetList.test_asset_011_list_filter_inactive
+  Type       : HP
+  Description: Filters returned assets by status=inactive.
+
+  Expected   : HTTP 200
+
+  Assertions : status_code == 200
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ASSET-012
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : GET /api/assets?status=unknown
+  Class      : TestAssetList.test_asset_012_list_invalid_status_filter
+  Type       : VE
+  Description: status must be one of 'active' or 'inactive'. Any other value
+               is rejected with 400 (not 422, handled in route logic).
+
+  Input      : GET /api/assets?status=unknown
+
+  Expected   : HTTP 400
+
+  Assertions : status_code == 400
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ASSET-013
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : GET /api/assets
+  Class      : TestAssetList.test_asset_013_list_empty_collection
+  Type       : EC
+  Description: When no assets exist the endpoint returns an empty list (not 404).
+
+  Expected   : HTTP 200, body == []
+
+  Assertions : status_code == 200
+               r.json() == []
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ASSET-014
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : PATCH /api/assets/{asset_id}
+  Class      : TestAssetUpdate.test_asset_014_update_valid_fields
+  Type       : HP
+  Description: Updates stock and costPrice on an existing active asset.
+
+  Input Path : /api/assets/<valid-id>
+  Input Body : { "stock": 99, "costPrice": 950.0 }
+  Mock Setup : find_one → [before_doc, after_doc]
+
+  Expected   : HTTP 200, updated doc returned
+
+  Assertions : status_code == 200
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ASSET-015
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : PATCH /api/assets/{asset_id}
+  Class      : TestAssetUpdate.test_asset_015_update_invalid_object_id
+  Type       : VE
+  Description: Non-ObjectId string in path → 400 (handled in route before DB call).
+
+  Input Path : /api/assets/not-an-id
+  Input Body : { "stock": 5 }
+
+  Expected   : HTTP 400
+
+  Assertions : status_code == 400
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ASSET-016
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : PATCH /api/assets/{asset_id}
+  Class      : TestAssetUpdate.test_asset_016_update_not_found
+  Type       : BR
+  Description: Asset does not exist → 404.
+
+  Mock Setup : find_one → None
+
+  Expected   : HTTP 404
+
+  Assertions : status_code == 404
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ASSET-017
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : PATCH /api/assets/{asset_id}
+  Class      : TestAssetUpdate.test_asset_017_update_no_fields
+  Type       : VE
+  Description: Body with no recognisable update fields → 400 "No fields to update".
+
+  Input Body : {}
+
+  Expected   : HTTP 400
+
+  Assertions : status_code == 400
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ASSET-018
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : DELETE /api/assets/{asset_id}
+  Class      : TestAssetDelete.test_asset_018_delete_active_asset
+  Type       : HP
+  Description: Soft-deletes an active asset by setting status=inactive.
+               Returns a confirmation message with assetId.
+
+  Mock Setup : find_one → active asset doc
+
+  Expected   : HTTP 200
+               { "message": "Asset deactivated", "assetId": "<id>" }
+
+  Assertions : status_code == 200
+               body["message"] == "Asset deactivated"
+               body["assetId"] == str(asset_id)
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ASSET-019
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : DELETE /api/assets/{asset_id}
+  Class      : TestAssetDelete.test_asset_019_delete_already_inactive
+  Type       : BR
+  Description: Attempting to delete an already-inactive asset is blocked.
+
+  Mock Setup : find_one → asset with status="inactive"
+
+  Expected   : HTTP 400
+
+  Assertions : status_code == 400
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ASSET-020
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : DELETE /api/assets/{asset_id}
+  Class      : TestAssetDelete.test_asset_020_delete_invalid_id
+  Type       : VE
+  Description: Invalid ObjectId in path → 400.
+
+  Expected   : HTTP 400
+
+  Assertions : status_code == 400
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ASSET-021
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : DELETE /api/assets/{asset_id}
+  Class      : TestAssetDelete.test_asset_021_delete_not_found
+  Type       : BR
+  Description: Asset not found in DB → 404.
+
+  Mock Setup : find_one → None
+
+  Expected   : HTTP 404
+
+  Assertions : status_code == 404
+
+================================================================================
+  SECTION 3 — ISSUANCES  (/api/issuances)
+================================================================================
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ISS-001
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : POST /api/issuances
+  Class      : TestIssuanceCreate.test_iss_001_emi_4_cycles
+  Type       : HP
+  Description: Issues an asset to a rider with EMI reconciliation over 4 cycles.
+               The deductionPerCycle is auto-calculated (floor(cost/cycles)).
+
+  Input Body :
+    {
+      "riderId": "<valid-ObjectId>",
+      "assetId": "<valid-ObjectId>",
+      "reconciliationType": "EMI",
+      "totalCycles": 4
+    }
+
+  Mock Setup : asset_master.find_one → active asset (stock=10, cost=1000)
+               asset_issuances.find_one → [None, new_issuance_doc]
+               asset_issuances.insert_one → inserted_id
+
+  Expected   : HTTP 201
+               Response contains "deductionPerCycle": 250.0
+
+  Assertions : status_code == 201
+               "deductionPerCycle" in body
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ISS-002
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : POST /api/issuances
+  Class      : TestIssuanceCreate.test_iss_002_flat_1_cycle
+  Type       : HP
+  Description: Issues an asset with FLAT reconciliation. totalCycles must be 1.
+               Full cost deducted in a single settlement cycle.
+
+  Input Body :
+    { "riderId": "...", "assetId": "...", "reconciliationType": "FLAT", "totalCycles": 1 }
+
+  Expected   : HTTP 201
+
+  Assertions : status_code == 201
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ISS-003
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : POST /api/issuances
+  Class      : TestIssuanceCreate.test_iss_003_asset_out_of_stock
+  Type       : BR
+  Description: Hard block: asset with stock=0 cannot be issued regardless of
+               any other conditions.
+
+  Mock Setup : asset_master.find_one → asset with stock=0
+
+  Expected   : HTTP 400
+               detail contains "stock"
+
+  Assertions : status_code == 400
+               "stock" in body["detail"].lower()
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ISS-004
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : POST /api/issuances
+  Class      : TestIssuanceCreate.test_iss_004_inactive_asset
+  Type       : BR
+  Description: Hard block: inactive asset cannot be issued.
+
+  Mock Setup : asset_master.find_one → asset with status="inactive"
+
+  Expected   : HTTP 400
+               detail contains "not active"
+
+  Assertions : status_code == 400
+               "not active" in body["detail"].lower()
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ISS-005
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : POST /api/issuances
+  Class      : TestIssuanceCreate.test_iss_005_asset_not_found
+  Type       : BR
+  Description: Asset ID does not exist in the database → 404.
+
+  Mock Setup : asset_master.find_one → None
+
+  Expected   : HTTP 404
+
+  Assertions : status_code == 404
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ISS-006
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : POST /api/issuances
+  Class      : TestIssuanceCreate.test_iss_006_cycles_over_4
+  Type       : BND
+  Description: Pydantic model has le=4 on totalCycles. Sending 5 is rejected
+               before the request reaches business logic.
+
+  Input Body : { ..., "totalCycles": 5 }
+
+  Expected   : HTTP 422
+
+  Assertions : status_code == 422
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ISS-007
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : POST /api/issuances
+  Class      : TestIssuanceCreate.test_iss_007_cycles_zero
+  Type       : BND
+  Description: totalCycles=0 is below the minimum (ge=1) → 422.
+
+  Input Body : { ..., "totalCycles": 0 }
+
+  Expected   : HTTP 422
+
+  Assertions : status_code == 422
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ISS-008
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : POST /api/issuances
+  Class      : TestIssuanceCreate.test_iss_008_flat_with_cycles_not_1
+  Type       : BR
+  Description: Business rule: FLAT reconciliation must have exactly 1 cycle.
+               The model_validator enforces this.
+
+  Input Body : { ..., "reconciliationType": "FLAT", "totalCycles": 2 }
+
+  Expected   : HTTP 422
+
+  Assertions : status_code == 422
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ISS-009
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : POST /api/issuances
+  Class      : TestIssuanceCreate.test_iss_009_invalid_rider_id
+  Type       : VE
+  Description: riderId must be a valid MongoDB ObjectId string.
+
+  Input Body : { "riderId": "not-a-valid-id", ... }
+
+  Expected   : HTTP 422
+
+  Assertions : status_code == 422
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ISS-010
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : POST /api/issuances
+  Class      : TestIssuanceCreate.test_iss_010_invalid_reconciliation_type
+  Type       : VE
+  Description: reconciliationType must match ^(FLAT|EMI)$. Any other value fails.
+
+  Input Body : { ..., "reconciliationType": "WEEKLY" }
+
+  Expected   : HTTP 422
+
+  Assertions : status_code == 422
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ISS-011
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : POST /api/issuances
+  Class      : TestIssuanceCreate.test_iss_011_duplicate_without_confirm
+  Type       : BR
+  Description: When a rider already has an active issuance for the same asset,
+               the endpoint returns a warning body instead of creating a new
+               record. The confirm=false flag (default) triggers this guard.
+
+  Mock Setup : asset_issuances.find_one → existing active issuance
+
+  Expected   : HTTP 201 (body contains warning)
+               {
+                 "warning": "Duplicate issuance detected...",
+                 "existingIssuanceId": "<id>"
+               }
+
+  Assertions : status_code == 201
+               "warning" in body
+               "existingIssuanceId" in body
+               insert_one NOT called
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ISS-012
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : POST /api/issuances?confirm=true
+  Class      : TestIssuanceCreate.test_iss_012_duplicate_with_confirm
+  Type       : BR
+  Description: With confirm=true, the duplicate guard is bypassed and a new
+               issuance record is created regardless of existing active issuance.
+
+  Mock Setup : asset_issuances.find_one → [existing_issuance, new_issuance]
+
+  Expected   : HTTP 201, no warning key in body
+
+  Assertions : status_code == 201
+               "warning" not in body
+               insert_one called exactly once
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ISS-013
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : POST /api/issuances
+  Class      : TestIssuanceCreate.test_iss_013_emi_boundary_min_cycles
+  Type       : BND
+  Description: totalCycles=1 is the minimum valid value for EMI (boundary test).
+
+  Expected   : HTTP 201
+
+  Assertions : status_code == 201
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ISS-014
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : GET /api/issuances/{rider_id}
+  Class      : TestIssuanceGet.test_iss_014_get_rider_issuances
+  Type       : HP
+  Description: Returns all issuances for a rider (2 records).
+
+  Mock Setup : asset_issuances.find → cursor of 2 docs
+
+  Expected   : HTTP 200, list of 2
+
+  Assertions : status_code == 200
+               len(body) == 2
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ISS-015
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : GET /api/issuances/{rider_id}
+  Class      : TestIssuanceGet.test_iss_015_get_issuances_invalid_rider_id
+  Type       : VE
+  Description: Non-ObjectId rider_id in path → 400.
+
+  Expected   : HTTP 400
+
+  Assertions : status_code == 400
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ISS-016
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : GET /api/issuances/{rider_id}?status=active
+  Class      : TestIssuanceGet.test_iss_016_get_issuances_filter_status
+  Type       : HP
+  Description: Filters rider's issuances by status query parameter.
+
+  Expected   : HTTP 200
+
+  Assertions : status_code == 200
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ISS-017
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : GET /api/issuances/{rider_id}
+  Class      : TestIssuanceGet.test_iss_017_get_issuances_empty
+  Type       : EC
+  Description: Rider has no issuances → empty list (not 404).
+
+  Expected   : HTTP 200, body == []
+
+  Assertions : status_code == 200
+               r.json() == []
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ISS-018
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : POST /api/issuances/bulk
+  Class      : TestIssuanceBulk.test_iss_018_bulk_valid_csv
+  Type       : HP
+  Description: Processes a valid CSV file with 2 rows (one EMI, one FLAT).
+               Both rows should be processed successfully.
+
+  Input File : CSV with columns: riderId, assetId, reconciliationType, totalCycles
+               Row 1: <valid-id>, <asset-id>, EMI,  4
+               Row 2: <valid-id>, <asset-id>, FLAT, 1
+
+  Expected   : HTTP 200
+               { "processed": 2, "rejected": [] }
+
+  Assertions : status_code == 200
+               body["processed"] == 2
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ISS-019
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : POST /api/issuances/bulk
+  Class      : TestIssuanceBulk.test_iss_019_bulk_missing_columns
+  Type       : VE
+  Description: CSV is missing required columns (riderId, assetId, etc.) → 400.
+
+  Input File : CSV with columns: name, type
+
+  Expected   : HTTP 400
+
+  Assertions : status_code == 400
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ISS-020
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : POST /api/issuances/bulk
+  Class      : TestIssuanceBulk.test_iss_020_bulk_partial_failures
+  Type       : EC
+  Description: CSV has one valid row and one row with an invalid riderId.
+               Valid row is processed; invalid goes to rejected list.
+
+  Input File :
+    Row 1: <valid-id>, <asset-id>, EMI, 4     ← processed
+    Row 2: INVALID-ID, <asset-id>, EMI, 4     ← rejected
+
+  Expected   : HTTP 200
+               rejected list has at least 1 entry
+
+  Assertions : status_code == 200
+               len(body["rejected"]) >= 1
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ISS-021
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : POST /api/issuances/bulk
+  Class      : TestIssuanceBulk.test_iss_021_bulk_all_invalid_rows
+  Type       : EC
+  Description: All rows in CSV are invalid → processed=0 and both rows in rejected.
+
+  Expected   : HTTP 200
+               { "processed": 0, "rejected": [row0, row1] }
+
+  Assertions : status_code == 200
+               body["processed"] == 0
+               len(body["rejected"]) == 2
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ISS-022
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : POST /api/issuances/{issuance_id}/replace?mid_balance_action=waive_remaining
+  Class      : TestIssuanceReplace.test_iss_022_replace_waive_remaining
+  Type       : HP
+  Description: Replaces an active issuance. The remaining outstanding balance
+               is waived (set to 0). A new issuance is created with a fresh
+               deduction plan.
+
+  Mock Setup : asset_issuances.find_one → [original_issuance, new_issuance]
+               asset_issuances.count_documents → 0  (no prior replacements)
+               asset_master.find_one → asset with stock>0
+
+  Expected   : HTTP 201
+               {
+                 "originalIssuanceId": "<id>",
+                 "newIssuanceId": "<id>",
+                 "midBalanceAction": "waive_remaining",
+                 "newIssuance": { ... }
+               }
+
+  Assertions : status_code == 201
+               body["midBalanceAction"] == "waive_remaining"
+               "newIssuanceId" in body
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ISS-023
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : POST /api/issuances/{issuance_id}/replace?mid_balance_action=pass_to_vendor
+  Class      : TestIssuanceReplace.test_iss_023_replace_pass_to_vendor
+  Type       : HP
+  Description: Replaces issuance and passes remaining balance to vendor_liabilities.
+               Verifies vendor_liabilities.insert_one is called.
+
+  Expected   : HTTP 201
+               midBalanceAction == "pass_to_vendor"
+               vendor_liabilities.insert_one called once
+
+  Assertions : status_code == 201
+               body["midBalanceAction"] == "pass_to_vendor"
+               mock_db.vendor_liabilities.insert_one.assert_called_once()
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ISS-024
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : POST /api/issuances/{issuance_id}/replace
+  Class      : TestIssuanceReplace.test_iss_024_replace_non_active_issuance
+  Type       : BR
+  Description: Only active issuances can be replaced. A completed issuance
+               cannot be replaced → 400.
+
+  Mock Setup : asset_issuances.find_one → issuance with status="completed"
+
+  Expected   : HTTP 400
+
+  Assertions : status_code == 400
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ISS-025
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : POST /api/issuances/{issuance_id}/replace
+  Class      : TestIssuanceReplace.test_iss_025_replace_issuance_not_found
+  Type       : BR
+  Description: Issuance not found in DB → 404.
+
+  Expected   : HTTP 404
+
+  Assertions : status_code == 404
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ISS-026
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : POST /api/issuances/{issuance_id}/replace
+  Class      : TestIssuanceReplace.test_iss_026_replace_invalid_issuance_id
+  Type       : VE
+  Description: Invalid ObjectId in path → 400.
+
+  Expected   : HTTP 400
+
+  Assertions : status_code == 400
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ISS-027
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : POST /api/issuances/{issuance_id}/replace?mid_balance_action=unknown_action
+  Class      : TestIssuanceReplace.test_iss_027_replace_invalid_mid_balance_action
+  Type       : VE
+  Description: mid_balance_action must match pattern ^(waive_remaining|pass_to_vendor)$.
+               Any other value is rejected by FastAPI's query parameter regex → 422.
+
+  Expected   : HTTP 422
+
+  Assertions : status_code == 422
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ISS-028
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : POST /api/issuances/{issuance_id}/replace
+  Class      : TestIssuanceReplace.test_iss_028_replace_max_replacements_exceeded
+  Type       : BR
+  Description: A rider can have a maximum of 2 replacements per asset. The third
+               replacement attempt is blocked → 400.
+
+  Mock Setup : asset_issuances.count_documents → 2
+
+  Expected   : HTTP 400
+               detail contains "replacement"
+
+  Assertions : status_code == 400
+               "replacement" in body["detail"].lower()
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ISS-029
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : POST /api/issuances/{issuance_id}/replace
+  Class      : TestIssuanceReplace.test_iss_029_replace_asset_out_of_stock
+  Type       : BR
+  Description: The replacement asset has stock=0 → 400. Stock is checked before
+               the new issuance is created.
+
+  Mock Setup : asset_master.find_one → asset with stock=0
+
+  Expected   : HTTP 400
+               detail contains "stock"
+
+  Assertions : status_code == 400
+               "stock" in body["detail"].lower()
+
+================================================================================
+  SECTION 4 — SETTLEMENT  (/api/settlement)
+================================================================================
+
+────────────────────────────────────────────────────────────────────────────────
+TC-SETT-001
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : POST /api/settlement/run-weekly
+  Class      : TestSettlement.test_sett_001_run_weekly_settlement
+  Type       : HP
+  Description: Runs the weekly settlement engine for a rider with earnings of
+               3500. Verifies the weekCycle label is correctly derived from
+               weekStart date.
+
+  Input Body :
+    {
+      "weekStart": "2026-03-16T00:00:00Z",
+      "weekEnd": "2026-03-22T23:59:59Z",
+      "riderEarnings": { "<rider-id>": 3500.0 }
+    }
+
+  Expected   : HTTP 200
+               { "weekCycle": "2026-W12", "totalRidersProcessed": 1, ... }
+
+  Assertions : status_code == 200
+               body["weekCycle"] == "2026-W12"
+               "totalRidersProcessed" in body
+
+────────────────────────────────────────────────────────────────────────────────
+TC-SETT-002
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : POST /api/settlement/run-weekly
+  Class      : TestSettlement.test_sett_002_week_start_after_end
+  Type       : BR
+  Description: weekStart must be strictly before weekEnd. Sending reversed
+               dates → 400.
+
+  Input Body :
+    { "weekStart": "2026-03-22T00:00:00Z", "weekEnd": "2026-03-16T00:00:00Z", ... }
+
+  Expected   : HTTP 400
+
+  Assertions : status_code == 400
+
+────────────────────────────────────────────────────────────────────────────────
+TC-SETT-003
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : POST /api/settlement/run-weekly
+  Class      : TestSettlement.test_sett_003_equal_week_start_end
+  Type       : BR
+  Description: weekStart == weekEnd also violates the constraint → 400.
+
+  Expected   : HTTP 400
+
+  Assertions : status_code == 400
+
+────────────────────────────────────────────────────────────────────────────────
+TC-SETT-004
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : POST /api/settlement/run-weekly
+  Class      : TestSettlement.test_sett_004_empty_rider_earnings
+  Type       : EC
+  Description: Sending an empty riderEarnings map processes zero riders but
+               is still a valid request.
+
+  Expected   : HTTP 200, totalRidersProcessed == 0
+
+  Assertions : status_code == 200
+               body["totalRidersProcessed"] == 0
+
+────────────────────────────────────────────────────────────────────────────────
+TC-SETT-005
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : GET /api/settlement/status/{week}
+  Class      : TestSettlement.test_sett_005_get_status_valid_week
+  Type       : HP
+  Description: Returns settlement status for a valid week cycle format.
+
+  Input Path : /api/settlement/status/2026-W12
+
+  Expected   : HTTP 200
+               { "weekCycle": "2026-W12", "ledgerBreakdown": {...}, ... }
+
+  Assertions : status_code == 200
+               body["weekCycle"] == "2026-W12"
+
+────────────────────────────────────────────────────────────────────────────────
+TC-SETT-006
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : GET /api/settlement/status/{week}
+  Class      : TestSettlement.test_sett_006_get_status_invalid_week_format
+  Type       : VE
+  Description: Week must match pattern ^\d{4}-W\d{1,2}$. Arbitrary strings fail.
+
+  Input Path : /api/settlement/status/week-twelve
+
+  Expected   : HTTP 400
+
+  Assertions : status_code == 400
+
+────────────────────────────────────────────────────────────────────────────────
+TC-SETT-007
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : GET /api/settlement/status/{week}
+  Class      : TestSettlement.test_sett_007_get_status_single_digit_week
+  Type       : BND
+  Description: Single-digit weeks (e.g. 2026-W5) match \d{1,2} and are valid.
+
+  Input Path : /api/settlement/status/2026-W5
+
+  Expected   : HTTP 200
+
+  Assertions : status_code == 200
+
+================================================================================
+  SECTION 5 — REPORTS  (/api/reports)
+================================================================================
+
+────────────────────────────────────────────────────────────────────────────────
+TC-REP-001
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : GET /api/reports/settlement/{week}
+  Class      : TestReports.test_rep_001_settlement_report_valid
+  Type       : HP
+  Description: Full settlement report for a week returns weekCycle, riderBreakdown,
+               and carryForwardSummary keys.
+
+  Expected   : HTTP 200
+               body["weekCycle"] == "2026-W12"
+               "riderBreakdown" in body
+               "carryForwardSummary" in body
+
+────────────────────────────────────────────────────────────────────────────────
+TC-REP-002
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : GET /api/reports/settlement/{week}
+  Class      : TestReports.test_rep_002_settlement_report_invalid_week
+  Type       : VE
+  Description: Invalid week format → 400.
+
+  Expected   : HTTP 400
+
+────────────────────────────────────────────────────────────────────────────────
+TC-REP-003
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : GET /api/reports/vendor-liability
+  Class      : TestReports.test_rep_003_vendor_liability_report_with_data
+  Type       : HP
+  Description: Returns aggregated vendor liability summary. Verifies totals
+               are correctly summed.
+
+  Mock Setup : vendor_liabilities.aggregate → 1 vendor with 5000 outstanding
+
+  Expected   : HTTP 200
+               body["totals"]["totalOutstanding"] == 5000.0
+
+────────────────────────────────────────────────────────────────────────────────
+TC-REP-004
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : GET /api/reports/vendor-liability
+  Class      : TestReports.test_rep_004_vendor_liability_report_empty
+  Type       : EC
+  Description: No vendor liabilities → empty vendors list, all totals = 0.
+
+  Expected   : HTTP 200
+               body["vendors"] == []
+               body["totals"]["totalOutstanding"] == 0
+
+────────────────────────────────────────────────────────────────────────────────
+TC-REP-005
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : GET /api/reports/audit/{entity_id}
+  Class      : TestReports.test_rep_005_audit_trail_with_logs
+  Type       : HP
+  Description: Returns audit log entries for an entity. Verifies totalEntries
+               count and that entityId is echoed back.
+
+  Mock Setup : asset_audit_logs.find → cursor of 1 log doc
+
+  Expected   : HTTP 200
+               body["entityId"] == entity_id
+               body["totalEntries"] == 1
+
+────────────────────────────────────────────────────────────────────────────────
+TC-REP-006
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : GET /api/reports/audit/{entity_id}
+  Class      : TestReports.test_rep_006_audit_trail_no_logs
+  Type       : EC
+  Description: Entity has no audit log entries → totalEntries=0, logs=[].
+
+  Expected   : HTTP 200
+               body["totalEntries"] == 0
+               body["logs"] == []
+
+================================================================================
+  SECTION 6 — VENDORS  (/api/vendors)
+================================================================================
+
+────────────────────────────────────────────────────────────────────────────────
+TC-VEN-001
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : GET /api/vendors/{vendor_id}/liabilities
+  Class      : TestVendors.test_ven_001_get_liabilities
+  Type       : HP
+  Description: Returns all liability records for a vendor.
+
+  Mock Setup : vendor_liabilities.find → cursor of 1 liability
+
+  Expected   : HTTP 200, list of 1 item
+
+────────────────────────────────────────────────────────────────────────────────
+TC-VEN-002
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : GET /api/vendors/{vendor_id}/liabilities
+  Class      : TestVendors.test_ven_002_get_liabilities_invalid_id
+  Type       : VE
+  Description: Invalid vendor_id → 400.
+
+  Expected   : HTTP 400
+
+────────────────────────────────────────────────────────────────────────────────
+TC-VEN-003
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : GET /api/vendors/{vendor_id}/liabilities
+  Class      : TestVendors.test_ven_003_get_liabilities_empty
+  Type       : EC
+  Description: Vendor with no liabilities → empty list.
+
+  Expected   : HTTP 200, body == []
+
+────────────────────────────────────────────────────────────────────────────────
+TC-VEN-004
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : POST /api/vendors/{vendor_id}/settle
+  Class      : TestVendors.test_ven_004_settle_vendor_full
+  Type       : HP
+  Description: Full payment covers the entire outstanding liability.
+               amountUnused=0, liability marked 'recovered'.
+
+  Mock Setup : vendor_liabilities.find → 1 liability with outstandingAmount=500
+  Input Body : { "amountPaid": 500.0, "note": "Full payment" }
+
+  Expected   : HTTP 200
+               body["amountApplied"] == 500.0
+               body["amountUnused"] == 0.0
+               body["liabilitiesSettled"][0]["newStatus"] == "recovered"
+
+────────────────────────────────────────────────────────────────────────────────
+TC-VEN-005
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : POST /api/vendors/{vendor_id}/settle
+  Class      : TestVendors.test_ven_005_settle_vendor_partial
+  Type       : HP
+  Description: Partial payment covers only part of the liability.
+               Liability is marked 'partially_recovered'.
+
+  Mock Setup : liability.outstandingAmount = 1000, amountPaid = 300
+
+  Expected   : HTTP 200
+               body["liabilitiesSettled"][0]["newStatus"] == "partially_recovered"
+
+────────────────────────────────────────────────────────────────────────────────
+TC-VEN-006
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : POST /api/vendors/{vendor_id}/settle
+  Class      : TestVendors.test_ven_006_settle_vendor_invalid_id
+  Type       : VE
+  Description: Invalid vendor_id → 400.
+
+  Expected   : HTTP 400
+
+────────────────────────────────────────────────────────────────────────────────
+TC-VEN-007
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : POST /api/vendors/{vendor_id}/settle
+  Class      : TestVendors.test_ven_007_settle_vendor_zero_amount
+  Type       : BND
+  Description: amountPaid=0 violates gt=0 constraint → 422.
+
+  Input Body : { "amountPaid": 0.0 }
+
+  Expected   : HTTP 422
+
+────────────────────────────────────────────────────────────────────────────────
+TC-VEN-008
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : POST /api/vendors/{vendor_id}/settle
+  Class      : TestVendors.test_ven_008_settle_vendor_no_liabilities
+  Type       : EC
+  Description: No pending liabilities exist for this vendor.
+               amountUnused = amountPaid (entire amount is unused).
+
+  Mock Setup : vendor_liabilities.find → empty cursor
+  Input Body : { "amountPaid": 500.0 }
+
+  Expected   : HTTP 200
+               body["amountUnused"] == 500.0
+               body["liabilitiesSettled"] == []
+
+────────────────────────────────────────────────────────────────────────────────
+TC-VEN-009
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : POST /api/vendors/{vendor_id}/settle
+  Class      : TestVendors.test_ven_009_settle_vendor_negative_amount
+  Type       : VE
+  Description: amountPaid < 0 → 422.
+
+  Input Body : { "amountPaid": -100.0 }
+
+  Expected   : HTTP 422
+
+================================================================================
+  SECTION 7 — ADMIN OVERRIDE  (/api/admin)
+================================================================================
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ADM-001
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : POST /api/admin/waive/{issuance_id}
+  Class      : TestAdminWaive.test_adm_001_waive_active_issuance
+  Type       : HP
+  Description: Finance waives the outstanding balance on an active issuance.
+               Returns the previous outstanding balance for audit purposes.
+
+  Mock Setup : asset_issuances.find_one → active issuance with outstanding=500
+  Input Body : { "reason": "Rider terminated", "performed_by_user_id": "finance_01" }
+
+  Expected   : HTTP 200
+               {
+                 "message": "Issuance waived successfully",
+                 "issuanceId": "<id>",
+                 "previousOutstandingBalance": 500.0
+               }
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ADM-002
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : POST /api/admin/waive/{issuance_id}
+  Class      : TestAdminWaive.test_adm_002_waive_not_found
+  Type       : BR
+  Description: Issuance not found in DB → 404.
+
+  Expected   : HTTP 404
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ADM-003
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : POST /api/admin/waive/{issuance_id}
+  Class      : TestAdminWaive.test_adm_003_waive_already_written_off
+  Type       : BR
+  Description: Cannot waive an issuance that is already written_off → 400.
+
+  Mock Setup : asset_issuances.find_one → issuance with status="written_off"
+
+  Expected   : HTTP 400
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ADM-004
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : POST /api/admin/waive/{issuance_id}
+  Class      : TestAdminWaive.test_adm_004_waive_already_completed
+  Type       : BR
+  Description: Cannot waive a completed issuance (already fully paid) → 400.
+
+  Mock Setup : asset_issuances.find_one → issuance with status="completed"
+
+  Expected   : HTTP 400
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ADM-005
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : POST /api/admin/waive/{issuance_id}
+  Class      : TestAdminWaive.test_adm_005_waive_invalid_issuance_id
+  Type       : VE
+  Description: Invalid ObjectId → 400.
+
+  Expected   : HTTP 400
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ADM-006
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : POST /api/admin/waive/{issuance_id}
+  Class      : TestAdminWaive.test_adm_006_waive_empty_reason
+  Type       : VE
+  Description: reason field has min_length=1. Empty string → 422.
+
+  Input Body : { "reason": "" }
+
+  Expected   : HTTP 422
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ADM-007
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : POST /api/admin/waive/{issuance_id}
+  Class      : TestAdminWaive.test_adm_007_waive_replaced_issuance
+  Type       : EC
+  Description: 'replaced' status is not in the blocklist (only completed and
+               written_off are). A replaced issuance can still be waived.
+
+  Mock Setup : asset_issuances.find_one → issuance with status="replaced"
+
+  Expected   : HTTP 200
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ADM-008
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : PATCH /api/admin/deduction/{ledger_id}
+  Class      : TestAdminDeductionAdjust.test_adm_008_adjust_deduction_valid
+  Type       : HP
+  Description: Finance adjusts the deducted amount on a ledger entry.
+               The issuance's totalRecovered and outstandingBalance are
+               reconciled accordingly.
+
+  Mock Setup : asset_deduction_ledger.find_one → [ledger_doc, updated_ledger]
+               asset_issuances.find_one → issuance
+  Input Body : { "amountDeducted": 200.0, "reason": "Correction" }
+
+  Expected   : HTTP 200, returns updated ledger
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ADM-009
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : PATCH /api/admin/deduction/{ledger_id}
+  Class      : TestAdminDeductionAdjust.test_adm_009_adjust_deduction_not_found
+  Type       : BR
+  Description: Ledger entry not found → 404.
+
+  Expected   : HTTP 404
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ADM-010
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : PATCH /api/admin/deduction/{ledger_id}
+  Class      : TestAdminDeductionAdjust.test_adm_010_adjust_deduction_invalid_id
+  Type       : VE
+  Description: Invalid ObjectId in path → 400.
+
+  Expected   : HTTP 400
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ADM-011
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : PATCH /api/admin/deduction/{ledger_id}
+  Class      : TestAdminDeductionAdjust.test_adm_011_adjust_deduction_negative_amount
+  Type       : VE
+  Description: amountDeducted has ge=0 constraint. Negative value → 422.
+
+  Input Body : { "amountDeducted": -50.0, "reason": "test" }
+
+  Expected   : HTTP 422
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ADM-012
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : PATCH /api/admin/deduction/{ledger_id}
+  Class      : TestAdminDeductionAdjust.test_adm_012_adjust_deduction_zero_amount
+  Type       : BND
+  Description: amountDeducted=0 means the cycle was effectively skipped.
+               This is a valid adjustment (status becomes "skipped").
+
+  Input Body : { "amountDeducted": 0.0, "reason": "Skipped this cycle" }
+
+  Expected   : HTTP 200
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ADM-013
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : POST /api/admin/flag-abuse/{issuance_id}
+  Class      : TestAdminFlagAbuse.test_adm_013_flag_abuse_vendor_issuance
+  Type       : HP
+  Description: Forces SELF absorption on a VENDOR issuance. This means the
+               rider becomes responsible for the outstanding balance.
+               Returns message confirming the change and the previous absorption type.
+
+  Mock Setup : asset_issuances.find_one → VENDOR issuance with status="active"
+  Input Body : { "reason": "Rider caused damage" }
+
+  Expected   : HTTP 200
+               { "message": "...SELF...", "previousAbsorptionType": "VENDOR" }
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ADM-014
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : POST /api/admin/flag-abuse/{issuance_id}
+  Class      : TestAdminFlagAbuse.test_adm_014_flag_abuse_already_self
+  Type       : BR
+  Description: Cannot flag-abuse an issuance that is already SELF → 400.
+
+  Expected   : HTTP 400
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ADM-015
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : POST /api/admin/flag-abuse/{issuance_id}
+  Class      : TestAdminFlagAbuse.test_adm_015_flag_abuse_completed_status
+  Type       : BR
+  Description: Only active or vendor_passed issuances can be flagged.
+               Completed issuance → 400.
+
+  Expected   : HTTP 400
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ADM-016
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : POST /api/admin/flag-abuse/{issuance_id}
+  Class      : TestAdminFlagAbuse.test_adm_016_flag_abuse_not_found
+  Type       : BR
+  Description: Issuance not found → 404.
+
+  Expected   : HTTP 404
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ADM-017
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : POST /api/admin/flag-abuse/{issuance_id}
+  Class      : TestAdminFlagAbuse.test_adm_017_flag_abuse_invalid_id
+  Type       : VE
+  Description: Invalid ObjectId → 400.
+
+  Expected   : HTTP 400
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ADM-018
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : POST /api/admin/flag-abuse/{issuance_id}
+  Class      : TestAdminFlagAbuse.test_adm_018_flag_abuse_vendor_passed_reactivates
+  Type       : EC
+  Description: When a vendor_passed issuance is flagged as abuse, it should
+               be reactivated (status changed back to 'active') AND the
+               pending vendor liability should be marked as recovered.
+
+  Mock Setup : asset_issuances.find_one → VENDOR issuance with status="vendor_passed"
+
+  Expected   : HTTP 200
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ADM-019
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : POST /api/admin/year-end-writeoff
+  Class      : TestAdminYearEndWriteOff.test_adm_019_year_end_dry_run
+  Type       : HP
+  Description: Dry run returns the list of issuances that would be written off
+               without committing any changes to the database.
+
+  Mock Setup : asset_issuances.find → cursor of 1 SELF active issuance
+               orders.count_documents → 0 (rider inactive)
+  Input Body : { "financialYearEnd": "2025-03-31T00:00:00Z", "dry_run": true }
+
+  Expected   : HTTP 200
+               {
+                 "dryRun": true,
+                 "issuancesToWriteOff": ["<issuance-id>"],
+                 "count": 1
+               }
+               update_one NOT called
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ADM-020
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : POST /api/admin/year-end-writeoff
+  Class      : TestAdminYearEndWriteOff.test_adm_020_year_end_actual_writeoff
+  Type       : HP
+  Description: Actual write-off commits the changes and returns writtenOff list.
+
+  Input Body : { "financialYearEnd": "2025-03-31T00:00:00Z", "dry_run": false }
+
+  Expected   : HTTP 200
+               body["writtenOff"] contains 1 entry
+               asset_issuances.update_one called
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ADM-021
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : POST /api/admin/year-end-writeoff
+  Class      : TestAdminYearEndWriteOff.test_adm_021_year_end_active_rider_excluded
+  Type       : BR
+  Description: Riders who have active orders since the financial year-end date
+               are excluded from the write-off.
+
+  Mock Setup : orders.count_documents → 5 (rider is still active)
+
+  Expected   : HTTP 200, writtenOff == []
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ADM-022
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : POST /api/admin/year-end-writeoff
+  Class      : TestAdminYearEndWriteOff.test_adm_022_year_end_no_qualifying_issuances
+  Type       : EC
+  Description: No SELF issuances exist → count=0.
+
+  Mock Setup : asset_issuances.find → empty cursor
+
+  Expected   : HTTP 200, count == 0
+
+────────────────────────────────────────────────────────────────────────────────
+TC-ADM-023
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : POST /api/admin/year-end-writeoff
+  Class      : TestAdminYearEndWriteOff.test_adm_023_year_end_multiple_riders
+  Type       : EC
+  Description: Two SELF issuances. One rider is inactive (count=0), one is
+               active (count=5). Only the inactive rider's issuance is written off.
+
+  Mock Setup : orders.count_documents → [0, 5] (first rider inactive, second active)
+
+  Expected   : HTTP 200, count == 1 in dry_run
+
+================================================================================
+  SECTION 8 — RIDER VIEW  (/api/rider)
+================================================================================
+
+────────────────────────────────────────────────────────────────────────────────
+TC-RIDER-001
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : GET /api/rider/{rider_id}/assets
+  Class      : TestRiderView.test_rider_001_get_assets_with_issuances
+  Type       : HP
+  Description: Returns rider's active issuances with outstanding balance,
+               deduction per cycle, and cycles remaining.
+
+  Mock Setup : asset_issuances.find → 1 issuance (outstanding=750, deduction=250)
+               asset_master.find_one → asset doc
+
+  Expected   : HTTP 200
+               {
+                 "riderId": "<id>",
+                 "assets": [{
+                   "outstandingBalance": 750.0,
+                   "deductionThisCycle": 250.0,
+                   ...
+                 }],
+                 "totalOutstanding": 750.0
+               }
+
+────────────────────────────────────────────────────────────────────────────────
+TC-RIDER-002
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : GET /api/rider/{rider_id}/assets
+  Class      : TestRiderView.test_rider_002_invalid_rider_id
+  Type       : VE
+  Description: Invalid rider_id → 400.
+
+  Expected   : HTTP 400
+
+────────────────────────────────────────────────────────────────────────────────
+TC-RIDER-003
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : GET /api/rider/{rider_id}/assets
+  Class      : TestRiderView.test_rider_003_no_issuances
+  Type       : EC
+  Description: Rider with no issuances → empty assets list, totalOutstanding=0.
+
+  Expected   : HTTP 200
+               body["assets"] == []
+               body["totalOutstanding"] == 0.0
+
+────────────────────────────────────────────────────────────────────────────────
+TC-RIDER-004
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : GET /api/rider/{rider_id}/assets
+  Class      : TestRiderView.test_rider_004_multiple_issuances_total_summed
+  Type       : HP
+  Description: Multiple issuances — totalOutstanding is the sum of all.
+               (750 + 250 = 1000.0)
+
+  Mock Setup : 2 issuances with outstanding 750 and 250 respectively
+
+  Expected   : HTTP 200
+               len(body["assets"]) == 2
+               body["totalOutstanding"] == 1000.0
+
+────────────────────────────────────────────────────────────────────────────────
+TC-RIDER-005
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : GET /api/rider/{rider_id}/assets
+  Class      : TestRiderView.test_rider_005_unknown_asset_fallback_name
+  Type       : EC
+  Description: Issuance references an asset that was deleted from asset_master.
+               Name falls back gracefully to "Unknown Asset".
+
+  Mock Setup : asset_master.find_one → None
+
+  Expected   : HTTP 200
+               body["assets"][0]["name"] == "Unknown Asset"
+
+────────────────────────────────────────────────────────────────────────────────
+TC-RIDER-006
+────────────────────────────────────────────────────────────────────────────────
+  Endpoint   : GET /api/rider/{rider_id}/assets
+  Class      : TestRiderView.test_rider_006_cycles_remaining_calculation
+  Type       : HP
+  Description: cyclesRemaining = totalCycles - cyclesCompleted.
+               With cycles=4, completed=2 → remaining=2.
+
+  Expected   : HTTP 200
+               body["assets"][0]["cyclesRemaining"] == 2
+               body["assets"][0]["cyclesCompleted"] == 2
+
+================================================================================
+  SECTION 9 — SETTLEMENT ENGINE UNIT TESTS (existing: test_settlement_engine.py)
+================================================================================
+
+  These 12 tests exercise the SettlementEngine and DeductionCalculator
+  service layer directly (no HTTP layer). Included here for completeness.
+
+  TC-SE-01  test_exact_earnings_full_deduction
+            Rider earns 250, owes 250 → fully deducted, payout=0, no carry-forward.
+
+  TC-SE-02  test_partial_earnings_carry_forward
+            Rider earns 100, owes 250 → deduct 100, carry-forward 150, payout=0.
+
+  TC-SE-03  test_active_rider_zero_earnings_no_deduction
+            Rider is active but earns 0 → deducted=0, carry-forward created.
+
+  TC-SE-04  test_inactive_rider_vendor_asset_passed_to_vendor
+            Rider inactive + VENDOR issuance → vendor_liabilities.insert_one called.
+
+  TC-SE-05  test_inactive_rider_self_asset_carry_forward
+            Rider inactive + SELF issuance → skipped ledger entry + carry-forward.
+
+  TC-SE-06  test_returning_rider_carry_forward_p0_priority
+            Returning rider: P0 carry-forward (50) satisfied first, then P1 (250).
+            Total deducted = 300 from earnings of 300.
+
+  TC-SE-07  test_vendor_partial_settlement
+            Vendor partial payment (200 of 500) → status=partially_recovered.
+
+  TC-SE-08  DeductionCalculator: 1000/4 = 250 (exact division).
+  TC-SE-09  DeductionCalculator: 1000/3 = 333 (floor division).
+  TC-SE-10  DeductionCalculator: 1000/1 = 1000 (FLAT).
+  TC-SE-11  DeductionCalculator: total_cycles=0 raises ValueError.
+  TC-SE-12  apply_deductions payout floor: earnings=300, due=500 → payout=0.
+
+================================================================================
+  SECTION 10 — ISSUANCE VALIDATION UNIT TESTS (existing: test_issuance_validation.py)
+================================================================================
+
+  These 16 tests exercise _do_issue_asset() and Pydantic models directly.
+
+  TC-IV-01  Stock=0 rejection (hard block).
+  TC-IV-02  totalCycles>4 rejected by Pydantic model.
+  TC-IV-03  totalCycles>4 rejected by _do_issue_asset even if model bypassed.
+  TC-IV-04  Duplicate issuance returns warning dict (confirm=False).
+  TC-IV-05  Duplicate issuance creates record when confirm=True.
+  TC-IV-06  Inactive asset blocks issuance.
+  TC-IV-07  Asset not found → 404.
+  TC-IV-08  FLAT reconciliation requires totalCycles=1 (ValidationError otherwise).
+  TC-IV-09  FLAT with totalCycles=1 passes.
+  TC-IV-10  BulkIssuanceRow rejects totalCycles > 4.
+  TC-IV-11  BulkIssuanceRow rejects totalCycles = 0.
+  TC-IV-12  BulkIssuanceRow accepts cycles 1, 2, 3, 4.
+  TC-IV-13  BulkIssuanceRow normalises reconciliationType "emi" → "EMI".
+  TC-IV-14  BulkIssuanceRow rejects unknown reconciliationType.
+  TC-IV-15  AssetIssuanceCreate: valid EMI payload passes.
+  TC-IV-16  AssetIssuanceCreate: invalid riderId / assetId / reconciliationType all fail.
+
+================================================================================
+  END OF TEST CASES DOCUMENTATION
+================================================================================
+
+  Total New Tests in test_api_endpoints.py  : 77
+  Existing Unit Tests (settlement_engine)   : 12
+  Existing Unit Tests (issuance_validation) : 16
+  ─────────────────────────────────────────────
+  GRAND TOTAL                               : 105 test cases
+
+================================================================================

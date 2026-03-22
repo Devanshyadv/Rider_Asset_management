@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Fairdeal — Asset Admin</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+  <!-- ═══════════════════════════ SIDEBAR ═══════════════════════════ -->
+  <nav id="sidebar">
+    <div class="sidebar-header">
+      <div class="logo-row">
+        <span class="logo-icon">🏍</span>
+        <div>
+          <div class="logo-name">Fairdeal</div>
+          <div class="logo-sub">Asset Admin</div>
+        </div>
+      </div>
+      <div class="health-row">
+        <span id="health-dot" class="health-dot"></span>
+        <span id="health-label" class="health-label">Checking…</span>
+      </div>
+    </div>
+
+    <div class="nav-group">
+      <span class="nav-label">Overview</span>
+      <a class="nav-item active" data-section="dashboard">📊 Dashboard</a>
+    </div>
+    <div class="nav-group">
+      <span class="nav-label">Inventory</span>
+      <a class="nav-item" data-section="assets">📦 Assets</a>
+    </div>
+    <div class="nav-group">
+      <span class="nav-label">Operations</span>
+      <a class="nav-item" data-section="issuances">📋 Issuances</a>
+      <a class="nav-item" data-section="bulk-upload">📤 Bulk Upload</a>
+      <a class="nav-item" data-section="rider-lookup">🏍 Rider Lookup</a>
+    </div>
+    <div class="nav-group">
+      <span class="nav-label">Finance</span>
+      <a class="nav-item" data-section="settlement">⚙️ Settlement</a>
+      <a class="nav-item" data-section="vendors">🏢 Vendors</a>
+      <a class="nav-item" data-section="reports">📈 Reports</a>
+    </div>
+    <div class="nav-group">
+      <span class="nav-label">Controls</span>
+      <a class="nav-item" data-section="admin">🛡️ Admin Actions</a>
+    </div>
+  </nav>
+
+  <!-- ═══════════════════════════ MAIN ═══════════════════════════ -->
+  <main id="main-content">
+
+    <!-- ── DASHBOARD ── -->
+    <section id="section-dashboard" class="section active">
+      <div class="page-header">
+        <h1>Dashboard</h1>
+        <button class="btn btn-ghost" onclick="loadDashboard()">↻ Refresh</button>
+      </div>
+      <div id="stat-cards" class="stat-grid">
+        <div class="stat-card loading">Loading…</div>
+      </div>
+      <div class="info-box mt-24">
+        <h3>Settlement Priority Order</h3>
+        <div class="priority-list">
+          <div class="priority-item p0"><span class="badge badge-p0">P0</span> SELF carry-forwards (oldest week first)</div>
+          <div class="priority-item p1a"><span class="badge badge-p1a">P1a</span> SELF active issuances (oldest issued first)</div>
+          <div class="priority-item p1b"><span class="badge badge-p1b">P1b</span> VENDOR active issuances (oldest issued first)</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── ASSETS ── -->
+    <section id="section-assets" class="section">
+      <div class="page-header">
+        <h1>Asset Master</h1>
+        <div class="header-actions">
+          <select id="asset-status-filter" class="input-sm" onchange="loadAssets(this.value)">
+            <option value="">All Statuses</option>
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+          </select>
+          <button class="btn btn-ghost" onclick="loadAssets(document.getElementById('asset-status-filter').value)">↻ Refresh</button>
+          <button class="btn btn-primary" onclick="openCreateAssetModal()">+ New Asset</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table id="assets-table">
+          <thead>
+            <tr>
+              <th>Name</th><th>Cost Price</th><th>Absorption</th><th>Vendor ID</th>
+              <th>Stock</th><th>Status</th><th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="assets-tbody"><tr><td colspan="7" class="empty-state">Click Refresh to load assets</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ── ISSUANCES ── -->
+    <section id="section-issuances" class="section">
+      <div class="page-header"><h1>Issuances</h1></div>
+      <div class="tabs">
+        <button class="tab active" data-tab="issue-form">Issue Asset</button>
+        <button class="tab" data-tab="lookup-rider">Lookup by Rider</button>
+      </div>
+
+      <!-- Issue Asset Tab -->
+      <div id="tab-issue-form" class="tab-panel active">
+        <div class="form-card">
+          <h3>Issue Asset to Rider</h3>
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Rider ID *</label>
+              <input id="iss-rider-id" type="text" class="input" placeholder="MongoDB ObjectId" />
+            </div>
+            <div class="form-group">
+              <label>Asset ID *</label>
+              <input id="iss-asset-id" type="text" class="input" placeholder="MongoDB ObjectId" />
+            </div>
+            <div class="form-group">
+              <label>Reconciliation Type *</label>
+              <select id="iss-recon-type" class="input" onchange="onReconTypeChange()">
+                <option value="EMI">EMI</option>
+                <option value="FLAT">FLAT</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Total Cycles * <span class="hint">(1–4; FLAT = 1)</span></label>
+              <input id="iss-cycles" type="number" class="input" value="4" min="1" max="4" />
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="checkbox-label">
+              <input id="iss-confirm" type="checkbox" />
+              Force duplicate issuance (confirm=true)
+            </label>
+          </div>
+          <button class="btn btn-primary" onclick="submitIssuanceForm()">Issue Asset</button>
+          <div id="iss-result" class="result-box hidden"></div>
+          <div id="iss-duplicate-banner" class="warning-banner hidden">
+            <span id="iss-duplicate-msg"></span>
+            <button class="btn btn-warning btn-sm" onclick="resubmitWithConfirm()">Proceed Anyway</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Lookup by Rider Tab -->
+      <div id="tab-lookup-rider" class="tab-panel">
+        <div class="search-bar">
+          <input id="lookup-rider-id" type="text" class="input" placeholder="Enter Rider ID (ObjectId)" />
+          <select id="lookup-status-filter" class="input-sm">
+            <option value="">All Statuses</option>
+            <option value="active">Active</option>
+            <option value="completed">Completed</option>
+            <option value="replaced">Replaced</option>
+            <option value="written_off">Written Off</option>
+            <option value="vendor_passed">Vendor Passed</option>
+          </select>
+          <button class="btn btn-primary" onclick="lookupRiderIssuances()">Search</button>
+        </div>
+        <div class="table-wrap mt-16">
+          <table id="issuances-table">
+            <thead>
+              <tr>
+                <th>Issuance ID</th><th>Asset ID</th><th>Type</th><th>Cycles</th>
+                <th>Deduction/Cycle</th><th>Outstanding</th><th>Status</th><th>Issued At</th><th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="issuances-tbody"><tr><td colspan="9" class="empty-state">Search a rider to see issuances</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── BULK UPLOAD ── -->
+    <section id="section-bulk-upload" class="section">
+      <div class="page-header"><h1>Bulk Issuance Upload</h1></div>
+      <div class="form-card">
+        <div class="info-box mb-16">
+          <strong>Required CSV columns:</strong>
+          <code>riderId, assetId, reconciliationType, totalCycles</code>
+          <button class="btn btn-ghost btn-sm ml-16" onclick="downloadSampleCSV()">⬇ Download Sample</button>
+        </div>
+        <div id="drop-zone" class="drop-zone" onclick="document.getElementById('bulk-file-input').click()">
+          <div class="drop-icon">📂</div>
+          <div class="drop-text">Drag & drop CSV here or <span class="link">browse</span></div>
+          <div id="drop-filename" class="drop-filename"></div>
+        </div>
+        <input id="bulk-file-input" type="file" accept=".csv" style="display:none" onchange="onBulkFileSelected(this)" />
+        <div class="form-group mt-16">
+          <label class="checkbox-label">
+            <input id="bulk-confirm" type="checkbox" />
+            Confirm duplicate issuances
+          </label>
+        </div>
+        <button class="btn btn-primary" onclick="submitBulkUpload()">Upload & Process</button>
+      </div>
+      <div id="bulk-results" class="mt-24 hidden"></div>
+    </section>
+
+    <!-- ── RIDER LOOKUP ── -->
+    <section id="section-rider-lookup" class="section">
+      <div class="page-header"><h1>Rider Asset View</h1></div>
+      <div class="search-bar">
+        <input id="rider-lookup-id" type="text" class="input" placeholder="Enter Rider ID (ObjectId)" />
+        <button class="btn btn-primary" onclick="lookupRiderAssets()">Load Assets</button>
+      </div>
+      <div id="rider-result" class="mt-24"></div>
+    </section>
+
+    <!-- ── SETTLEMENT ── -->
+    <section id="section-settlement" class="section">
+      <div class="page-header"><h1>Settlement Engine</h1></div>
+      <div class="two-col">
+
+        <!-- Run Weekly -->
+        <div class="form-card">
+          <h3>Run Weekly Settlement</h3>
+          <div class="warning-banner static mb-16">⚠️ This operation writes to the database. Verify data before running.</div>
+          <div class="form-group">
+            <label>Week Start (UTC) *</label>
+            <input id="sett-week-start" type="datetime-local" class="input" />
+          </div>
+          <div class="form-group">
+            <label>Week End (UTC) *</label>
+            <input id="sett-week-end" type="datetime-local" class="input" />
+          </div>
+          <div class="form-group">
+            <label>Rider Earnings (JSON) *
+              <span class="hint">{"riderId": earningsFloat}</span>
+            </label>
+            <textarea id="sett-earnings" class="input textarea" rows="6" placeholder='{"64f1a2b3c4d5e6f7a8b9c0d2": 3500.0}'></textarea>
+          </div>
+          <button class="btn btn-primary" onclick="runWeeklySettlement()">▶ Run Settlement</button>
+          <div id="sett-run-result" class="result-box hidden mt-16"></div>
+        </div>
+
+        <!-- Check Status -->
+        <div class="form-card">
+          <h3>Check Settlement Status</h3>
+          <div class="form-group">
+            <label>Week Cycle *  <span class="hint">e.g. 2026-W12</span></label>
+            <input id="sett-status-week" type="text" class="input" placeholder="2026-W12" />
+          </div>
+          <button class="btn btn-secondary" onclick="checkSettlementStatus()">Check Status</button>
+          <div id="sett-status-result" class="result-box hidden mt-16"></div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ── VENDORS ── -->
+    <section id="section-vendors" class="section">
+      <div class="page-header"><h1>Vendor Management</h1></div>
+      <div class="tabs">
+        <button class="tab active" data-tab="ven-liabilities">View Liabilities</button>
+        <button class="tab" data-tab="ven-settle">Settle Vendor</button>
+      </div>
+
+      <!-- Liabilities Tab -->
+      <div id="tab-ven-liabilities" class="tab-panel active">
+        <div class="search-bar">
+          <input id="ven-id-input" type="text" class="input" placeholder="Vendor ID (ObjectId)" />
+          <button class="btn btn-primary" onclick="loadVendorLiabilities()">Load Liabilities</button>
+        </div>
+        <div id="ven-liabilities-summary" class="stat-grid sm-grid mt-16 hidden"></div>
+        <div class="table-wrap mt-16">
+          <table id="liabilities-table">
+            <thead>
+              <tr>
+                <th>Liability ID</th><th>Issuance ID</th><th>Rider ID</th>
+                <th>Outstanding</th><th>Recovered</th><th>Status</th><th>Week</th>
+              </tr>
+            </thead>
+            <tbody id="liabilities-tbody"><tr><td colspan="7" class="empty-state">Enter a Vendor ID to load liabilities</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Settle Tab -->
+      <div id="tab-ven-settle" class="tab-panel">
+        <div class="form-card">
+          <h3>Record Vendor Payment</h3>
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Vendor ID *</label>
+              <input id="ven-settle-id" type="text" class="input" placeholder="MongoDB ObjectId" />
+            </div>
+            <div class="form-group">
+              <label>Amount Paid * <span class="hint">(must be &gt; 0)</span></label>
+              <input id="ven-amount" type="number" class="input" min="0.01" step="0.01" placeholder="0.00" />
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Note (optional)</label>
+            <input id="ven-note" type="text" class="input" placeholder="e.g. March 2026 payout" />
+          </div>
+          <div class="form-group">
+            <label>Performed By (optional)</label>
+            <input id="ven-performed-by" type="text" class="input" placeholder="User ID" />
+          </div>
+          <button class="btn btn-primary" onclick="settleVendor()">Record Payment</button>
+          <div id="ven-settle-result" class="result-box hidden mt-16"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── REPORTS ── -->
+    <section id="section-reports" class="section">
+      <div class="page-header"><h1>Reports</h1></div>
+      <div class="tabs">
+        <button class="tab active" data-tab="rep-settlement">Settlement</button>
+        <button class="tab" data-tab="rep-vendor">Vendor Liability</button>
+        <button class="tab" data-tab="rep-audit">Audit Trail</button>
+      </div>
+
+      <!-- Settlement Report -->
+      <div id="tab-rep-settlement" class="tab-panel active">
+        <div class="search-bar">
+          <input id="rep-sett-week" type="text" class="input" placeholder="2026-W12" />
+          <button class="btn btn-primary" onclick="loadSettlementReport()">Generate Report</button>
+        </div>
+        <div id="rep-sett-result" class="mt-24"></div>
+      </div>
+
+      <!-- Vendor Liability Report -->
+      <div id="tab-rep-vendor" class="tab-panel">
+        <div class="search-bar">
+          <button class="btn btn-primary" onclick="loadVendorLiabilityReport()">Load Report</button>
+        </div>
+        <div id="rep-vendor-result" class="mt-24"></div>
+      </div>
+
+      <!-- Audit Trail -->
+      <div id="tab-rep-audit" class="tab-panel">
+        <div class="search-bar">
+          <input id="rep-audit-entity" type="text" class="input" placeholder="Entity ID (any ObjectId)" />
+          <button class="btn btn-primary" onclick="loadAuditTrail()">Fetch Audit Trail</button>
+        </div>
+        <div id="rep-audit-result" class="mt-24"></div>
+      </div>
+    </section>
+
+    <!-- ── ADMIN ── -->
+    <section id="section-admin" class="section">
+      <div class="page-header"><h1>Admin Actions</h1></div>
+      <div class="admin-grid">
+
+        <!-- Waive Issuance -->
+        <div class="form-card admin-card">
+          <div class="admin-card-header">
+            <h3>Waive Issuance</h3>
+            <span class="role-badge finance">Finance</span>
+          </div>
+          <p class="card-desc">Forgives the outstanding balance — sets status to written_off.</p>
+          <div class="form-group">
+            <label>Issuance ID *</label>
+            <input id="adm-waive-id" type="text" class="input" placeholder="ObjectId" />
+          </div>
+          <div class="form-group">
+            <label>Reason *</label>
+            <textarea id="adm-waive-reason" class="input textarea" rows="2" placeholder="e.g. Rider terminated"></textarea>
+          </div>
+          <div class="form-group">
+            <label>Performed By</label>
+            <input id="adm-waive-by" type="text" class="input" placeholder="User ID (optional)" />
+          </div>
+          <button class="btn btn-warning" onclick="waiveIssuance()">Waive Balance</button>
+          <div id="adm-waive-result" class="result-box hidden mt-12"></div>
+        </div>
+
+        <!-- Adjust Deduction -->
+        <div class="form-card admin-card">
+          <div class="admin-card-header">
+            <h3>Adjust Deduction</h3>
+            <span class="role-badge finance">Finance</span>
+          </div>
+          <p class="card-desc">Manually correct the deducted amount on a ledger entry.</p>
+          <div class="form-group">
+            <label>Ledger ID *</label>
+            <input id="adm-ded-id" type="text" class="input" placeholder="ObjectId" />
+          </div>
+          <div class="form-group">
+            <label>Amount Deducted * <span class="hint">(≥ 0)</span></label>
+            <input id="adm-ded-amount" type="number" class="input" min="0" step="0.01" placeholder="0.00" />
+          </div>
+          <div class="form-group">
+            <label>Reason *</label>
+            <textarea id="adm-ded-reason" class="input textarea" rows="2" placeholder="e.g. Correction — wrong amount"></textarea>
+          </div>
+          <div class="form-group">
+            <label>Performed By</label>
+            <input id="adm-ded-by" type="text" class="input" placeholder="User ID (optional)" />
+          </div>
+          <button class="btn btn-secondary" onclick="adjustDeduction()">Adjust Deduction</button>
+          <div id="adm-ded-result" class="result-box hidden mt-12"></div>
+        </div>
+
+        <!-- Flag Abuse -->
+        <div class="form-card admin-card">
+          <div class="admin-card-header">
+            <h3>Flag Abuse</h3>
+            <span class="role-badge lmd">LMD</span>
+          </div>
+          <p class="card-desc">Forces SELF absorption — rider becomes responsible for outstanding balance.</p>
+          <div class="form-group">
+            <label>Issuance ID *</label>
+            <input id="adm-abuse-id" type="text" class="input" placeholder="ObjectId" />
+          </div>
+          <div class="form-group">
+            <label>Reason *</label>
+            <textarea id="adm-abuse-reason" class="input textarea" rows="2" placeholder="e.g. Rider caused damage"></textarea>
+          </div>
+          <div class="form-group">
+            <label>Performed By</label>
+            <input id="adm-abuse-by" type="text" class="input" placeholder="User ID (optional)" />
+          </div>
+          <button class="btn btn-danger" onclick="flagAbuse()">Flag as Abuse</button>
+          <div id="adm-abuse-result" class="result-box hidden mt-12"></div>
+        </div>
+
+        <!-- Year-End Write-Off -->
+        <div class="form-card admin-card">
+          <div class="admin-card-header">
+            <h3>Year-End Write-Off</h3>
+            <span class="role-badge finance">Finance</span>
+          </div>
+          <p class="card-desc">Bulk write-off SELF issuances where rider has had no activity since year-end.</p>
+          <div class="form-group">
+            <label>Financial Year End *</label>
+            <input id="adm-writeoff-date" type="date" class="input" />
+          </div>
+          <div class="form-group">
+            <label>Performed By</label>
+            <input id="adm-writeoff-by" type="text" class="input" placeholder="User ID (optional)" />
+          </div>
+          <div class="form-group">
+            <label class="checkbox-label">
+              <input id="adm-dry-run" type="checkbox" checked onchange="onDryRunChange()" />
+              <span id="dry-run-label">Dry Run (Preview Only — safe)</span>
+            </label>
+          </div>
+          <button id="adm-writeoff-btn" class="btn btn-warning" onclick="yearEndWriteOff()">Preview Write-Off</button>
+          <div id="adm-writeoff-result" class="result-box hidden mt-12"></div>
+        </div>
+
+      </div>
+    </section>
+
+  </main><!-- /main-content -->
+
+  <!-- ═══════════════════════ MODAL ═══════════════════════ -->
+  <div id="modal-overlay" class="modal-overlay hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 id="modal-title"></h3>
+        <button class="modal-close" onclick="closeModal()">✕</button>
+      </div>
+      <div id="modal-body"></div>
+      <div class="modal-footer">
+        <button id="modal-cancel" class="btn btn-ghost">Cancel</button>
+        <button id="modal-confirm" class="btn btn-primary">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════ TOASTS ═══════════════════════ -->
+  <div id="toast-container"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
