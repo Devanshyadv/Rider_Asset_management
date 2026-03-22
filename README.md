@@ -32,7 +32,7 @@
 
 ### Problem
 
-Last-mile delivery platforms issue physical assets (delivery bags, phones, rain gear) to riders. Recovering the cost of these assets through weekly payroll deductions is operationally complex:
+Delivery platforms issue physical assets (delivery bags, phones, rain gear) to riders. Recovering the cost of these assets through weekly payroll deductions is operationally complex:
 
 - Assets may be absorbed by the **vendor** (cost is vendor's liability) or **self** (rider bears the cost).
 - Deductions must happen in a strict **priority order** so riders who owe the most critical debts are settled first.
